@@ -12,3 +12,5 @@ python-dotenv
 typesense
 langchain-google-genai
 langgraph
+unstructured
+python-docx
