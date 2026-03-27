@@ -30,8 +30,17 @@ pip install -r requirements.txt
 ```
 
 ## Usage
-- Ingest documents and build embeddings: open and run `pipelines/test.ipynb` (or `pipelines/loader.py`) to load files, chunk text, create embeddings, and insert into the ChromaDB collection.
-- Run retrieval and generation: use the retrieval class in `pipelines/test.ipynb` to query the vector store and generate responses via the configured LLM.
+- Run the MCP RAG server:
+
+```powershell
+python pipelines/rag_server.py
+```
+
+- Available MCP tools:
+	- `ingest_documents(force_rebuild=False)` to build or refresh the Chroma index from `data_files/`
+	- `retrieve_relevant_chunks(query, top_k=5)` to return the best matching chunks
+	- `answer_question(query, top_k=5)` to run retrieval plus Gemini answer generation
+- The server ingests local documents during the MCP lifespan, so the vector store is ready when the server starts.
 
 ## Configuration
 - Store keys in a `.env` file or your OS environment variables. Example `.env`:

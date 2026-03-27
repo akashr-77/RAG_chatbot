@@ -14,3 +14,5 @@ langchain-google-genai
 langgraph
 unstructured
 python-docx
+fastmcp
+langchain-mcp-adapters
