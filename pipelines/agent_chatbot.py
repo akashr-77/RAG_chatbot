@@ -13,8 +13,8 @@ from langgraph.checkpoint.memory import MemorySaver
 from dotenv import load_dotenv 
 load_dotenv()
 
-SCRIPT_DIR = Path(__file__).resolve().parent
-RAG_SERVER_PATH = SCRIPT_DIR / "rag_server_2.py"
+# SCRIPT_DIR = Path(__file__).resolve().parent
+# RAG_SERVER_PATH = SCRIPT_DIR / "rag_server_2.py"
 
 google_api_key = os.getenv("GOOGLE_API_KEY", "").strip()
 

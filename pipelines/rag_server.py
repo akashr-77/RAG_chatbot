@@ -30,28 +30,40 @@ DATA_DIR = BASE_DIR / "data_files"
 VECTOR_DB_DIR = BASE_DIR / "vector_database"
 
 
+#This flag ensures that the vector store is only populated once when the server starts, preventing redundant processing on subsequent tool calls.
+_SESSION_INGESTED = False
 
 def log(message: str):
     print(message, file=sys.stderr)
 
 @asynccontextmanager
 async def lifespan(server):
-    try:
-        ensure_vector_store_populated()
-        print("✅ Vector store ready")
-    except Exception as e:
-        print(f"❌ Failed to initialize vector store: {e}")
-        raise  # stop server startup
+    global _SESSION_INGESTED
 
+    #Guard clause to prevent multiple ingestions in the same session
+    if _SESSION_INGESTED:
+        log("Session already ingested. Skipping ingestion step.")
+        yield
+        return
+    
+    log("Starting ingestion of documents into vector store...")
+
+    result = ensure_vector_store_populated(force_rebuild=False)
+    if result["status"] == "empty":
+        raise RuntimeError(
+            f"Ingestion failed: no supported documents found in {DATA_DIR}. "
+            "Add .pdf / .txt / .docx files and restart."
+        )
+    
+    _SESSION_INGESTED = True
+    log(f"Ingestion result: {result}")
     yield
-
-    print("🛑 Server shutting down")
+    log("Server shutdown. Session ended.")
 
 
 mcp = FastMCP("RAGServer", lifespan=lifespan)
 
 #load all the files from data_files folder
-
 def _sanitize_metadata_value(value):
     if isinstance(value, (str, int, float, bool)):
         return value
@@ -269,6 +281,12 @@ def get_retriever() -> "RAGretriever":
 
 
 def ensure_vector_store_populated(force_rebuild: bool = False) -> Dict[str, Any]:
+
+    # If _SESSION_INGESTED is True, we've already done this work in the
+    # current process. Return immediately, zero cost.
+    if _SESSION_INGESTED:
+        return {"status": "skipped", "message": "Already ingested in this session"}
+    
     vector_store = get_vector_store()
     collection_size = vector_store.collection.count()
     if collection_size > 0 and not force_rebuild:
@@ -295,7 +313,7 @@ class RAGretriever:
     """
     Handles querying the vector store and retrieving relevant document chunks based on similarity to the query. 
     """
-    def __init__(self, vector_store_manager: VectorStore, embedding_manager: EmbeddingManager, threshold_dist: float = 3):
+    def __init__(self, vector_store_manager: VectorStore, embedding_manager: EmbeddingManager, threshold_dist: float = 1.5):
         self.vector_store_manager = vector_store_manager
         self.embedding_manager = embedding_manager
         self.threshold_dist = threshold_dist
@@ -345,7 +363,7 @@ class RAGretriever:
 
 #Generation layer
 
-def generate_answer(query: str, retrieved_docs: List[Dict[str, Any]], llm_model_name: str = "gemini-3-flash-preview") -> str:
+def generate_answer(query: str, retrieved_docs: List[Dict[str, Any]], llm_model_name: str = "gemini-2.5-flash") -> str:
     # Generate answer using LLM
 
     api_key = os.getenv("GOOGLE_API_KEY", "").strip()
@@ -373,20 +391,20 @@ def generate_answer(query: str, retrieved_docs: List[Dict[str, Any]], llm_model_
 
     return answer
 
-@mcp.tool()
-def ingest_documents(force_rebuild: bool = False) -> Dict[str, Any]:
-    """Build or refresh the persistent Chroma index from local documents."""
-    return ensure_vector_store_populated(force_rebuild=force_rebuild)
+# @mcp.tool()
+# def ingest_documents(force_rebuild: bool = False) -> Dict[str, Any]:
+#     """Build or refresh the persistent Chroma index from local documents."""
+#     return ensure_vector_store_populated(force_rebuild=force_rebuild)
+
+
+# @mcp.tool()
+# def retrieve_relevant_chunks(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+#     """Retrieve the most relevant chunks for a query."""
+#     return get_retriever().retrieve(query=query, top_k=top_k)
 
 
 @mcp.tool()
-def retrieve_relevant_chunks(query: str, top_k: int = 5) -> List[Dict[str, Any]]:
-    """Retrieve the most relevant chunks for a query."""
-    return get_retriever().retrieve(query=query, top_k=top_k)
-
-
-@mcp.tool()
-def answer_question(query: str, top_k: int = 5, llm_model_name: str = "gemini-3-flash-preview") -> Dict[str, Any]:
+def answer_question(query: str, top_k: int = 10, llm_model_name: str = "gemini-2.5-flash") -> Dict[str, Any]:
     """Run retrieval-augmented generation end to end for a user question."""
     retrieved_docs = get_retriever().retrieve(query=query, top_k=top_k)
     answer = generate_answer(query=query, retrieved_docs=retrieved_docs, llm_model_name=llm_model_name)
@@ -397,5 +415,7 @@ def answer_question(query: str, top_k: int = 5, llm_model_name: str = "gemini-3-
     }
 
 if __name__ == "__main__":
-    mcp.run()
+    # mcp.run()
+    # mcp.run(transport="sse", host="127.0.0.1", port=8000)
+    mcp.run(transport="sse")
 

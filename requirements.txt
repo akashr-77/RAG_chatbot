@@ -16,3 +16,4 @@ unstructured
 python-docx
 fastmcp
 langchain-mcp-adapters
+fastapi
