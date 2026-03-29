@@ -1,7 +1,7 @@
 import { useState, useRef, useEffect, useCallback } from 'react'
 import './App.css'
 
-// ── Icons (inline SVG to avoid dependencies) ─────────────────────────────────
+// ── Inline SVG icons ──────────────────────────────────────────────────────────
 const SendIcon = () => (
   <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2">
     <path d="M22 2L11 13M22 2L15 22l-4-9-9-4 20-7z" />
@@ -30,47 +30,38 @@ const TrashIcon = () => (
   </svg>
 )
 
-
-// ── Typing indicator component ────────────────────────────────────────────────
+// ── Typing / status indicator ─────────────────────────────────────────────────
 function TypingIndicator({ status }) {
   return (
     <div className="message assistant">
       <div className="avatar"><BotIcon /></div>
       <div className="bubble typing-bubble">
-        {status ? (
-          <span className="status-text">{status}</span>
-        ) : (
-          <span className="dots">
-            <span /><span /><span />
-          </span>
-        )}
+        {status
+          ? <span className="status-text">{status}</span>
+          : <span className="dots"><span /><span /><span /></span>
+        }
       </div>
     </div>
   )
 }
 
-
-// ── Single message component ──────────────────────────────────────────────────
+// ── Single message bubble ─────────────────────────────────────────────────────
 function Message({ msg }) {
   const isUser = msg.role === 'user'
   return (
     <div className={`message ${isUser ? 'user' : 'assistant'}`}>
-      <div className="avatar">
-        {isUser ? <UserIcon /> : <BotIcon />}
-      </div>
+      <div className="avatar">{isUser ? <UserIcon /> : <BotIcon />}</div>
       <div className="bubble">
-        {/* Render newlines as line breaks */}
-        {msg.content.split('\n').map((line, i) => (
-          <span key={i}>{line}{i < msg.content.split('\n').length - 1 && <br />}</span>
+        {msg.content.split('\n').map((line, i, arr) => (
+          <span key={i}>{line}{i < arr.length - 1 && <br />}</span>
         ))}
       </div>
     </div>
   )
 }
 
-
 // ── Sidebar conversation item ─────────────────────────────────────────────────
-function ConversationItem({ conv, isActive, onSelect, onDelete }) {
+function ConvItem({ conv, isActive, onSelect, onDelete }) {
   return (
     <div
       className={`conv-item ${isActive ? 'active' : ''}`}
@@ -80,7 +71,6 @@ function ConversationItem({ conv, isActive, onSelect, onDelete }) {
       <button
         className="conv-delete"
         onClick={e => { e.stopPropagation(); onDelete(conv.id) }}
-        title="Delete"
       >
         <TrashIcon />
       </button>
@@ -88,27 +78,25 @@ function ConversationItem({ conv, isActive, onSelect, onDelete }) {
   )
 }
 
-
 // ── Main App ──────────────────────────────────────────────────────────────────
 export default function App() {
-  const [conversations, setConversations] = useState([])   // list of {id, title, messages}
-  const [activeId, setActiveId] = useState(null)           // current conversation id
-  const [input, setInput] = useState('')
-  const [isStreaming, setIsStreaming] = useState(false)
-  const [streamStatus, setStreamStatus] = useState('')     // "Searching knowledge base..."
-  const bottomRef = useRef(null)
+  const [conversations, setConversations] = useState([])
+  const [activeId,      setActiveId]      = useState(null)
+  const [input,         setInput]         = useState('')
+  const [isStreaming,   setIsStreaming]   = useState(false)
+  const [streamStatus,  setStreamStatus]  = useState('')
+  const bottomRef   = useRef(null)
   const textareaRef = useRef(null)
 
-  // Active conversation derived from state
   const activeConv = conversations.find(c => c.id === activeId)
-  const messages = activeConv?.messages ?? []
+  const messages   = activeConv?.messages ?? []
 
-  // Auto scroll to bottom on new messages
+  // Scroll to bottom on new content
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: 'smooth' })
   }, [messages, isStreaming])
 
-  // Auto resize textarea
+  // Auto-resize textarea
   useEffect(() => {
     const ta = textareaRef.current
     if (!ta) return
@@ -116,7 +104,7 @@ export default function App() {
     ta.style.height = Math.min(ta.scrollHeight, 160) + 'px'
   }, [input])
 
-  // Create a new conversation (fetches a thread_id from the backend)
+  // New conversation — fetches a thread_id from the backend
   const newConversation = useCallback(async () => {
     const res = await fetch('/api/new_thread')
     const { thread_id } = await res.json()
@@ -126,37 +114,29 @@ export default function App() {
     setInput('')
   }, [])
 
-  // Create first conversation on mount
-  useEffect(() => {
-    newConversation()
-  }, [])
+  useEffect(() => { newConversation() }, [])
 
-  // Delete a conversation
   const deleteConversation = useCallback((id) => {
     setConversations(prev => {
       const next = prev.filter(c => c.id !== id)
-      if (activeId === id) {
-        setActiveId(next[0]?.id ?? null)
-      }
+      if (activeId === id) setActiveId(next[0]?.id ?? null)
       return next
     })
   }, [activeId])
 
-  // Update messages in a specific conversation
   const updateMessages = useCallback((convId, updater) => {
     setConversations(prev =>
       prev.map(c => c.id === convId ? { ...c, messages: updater(c.messages) } : c)
     )
   }, [])
 
-  // Set conversation title from first message
   const setTitle = useCallback((convId, title) => {
     setConversations(prev =>
       prev.map(c => c.id === convId ? { ...c, title: title.slice(0, 40) } : c)
     )
   }, [])
 
-  // Send a message
+  // Send message and read SSE stream
   const sendMessage = useCallback(async () => {
     const text = input.trim()
     if (!text || isStreaming || !activeId) return
@@ -165,23 +145,21 @@ export default function App() {
     setIsStreaming(true)
     setStreamStatus('')
 
-    // Add user message immediately
-    const userMsg = { role: 'user', content: text }
     updateMessages(activeId, msgs => {
-      if (msgs.length === 0) setTitle(activeId, text)  // first message = title
-      return [...msgs, userMsg]
+      if (msgs.length === 0) setTitle(activeId, text)
+      return [...msgs, { role: 'user', content: text }]
     })
 
     try {
       const response = await fetch('/api/chat', {
-        method: 'POST',
+        method:  'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ message: text, thread_id: activeId }),
+        body:    JSON.stringify({ message: text, thread_id: activeId }),
       })
 
       if (!response.ok) throw new Error(`HTTP ${response.status}`)
 
-      const reader = response.body.getReader()
+      const reader  = response.body.getReader()
       const decoder = new TextDecoder()
       let buffer = ''
 
@@ -191,13 +169,12 @@ export default function App() {
 
         buffer += decoder.decode(value, { stream: true })
         const lines = buffer.split('\n')
-        buffer = lines.pop()  // keep incomplete last line in buffer
+        buffer = lines.pop()   // keep incomplete last line
 
         for (const line of lines) {
           if (!line.startsWith('data: ')) continue
           const raw = line.slice(6).trim()
           if (!raw) continue
-
           let data
           try { data = JSON.parse(raw) } catch { continue }
 
@@ -207,12 +184,12 @@ export default function App() {
             setStreamStatus('')
             updateMessages(activeId, msgs => [
               ...msgs,
-              { role: 'assistant', content: data.text }
+              { role: 'assistant', content: data.text },
             ])
           } else if (data.type === 'error') {
             updateMessages(activeId, msgs => [
               ...msgs,
-              { role: 'assistant', content: `Error: ${data.text}` }
+              { role: 'assistant', content: `Error: ${data.text}` },
             ])
           } else if (data.type === 'done') {
             setStreamStatus('')
@@ -222,7 +199,7 @@ export default function App() {
     } catch (err) {
       updateMessages(activeId, msgs => [
         ...msgs,
-        { role: 'assistant', content: `Connection error: ${err.message}` }
+        { role: 'assistant', content: `Connection error: ${err.message}` },
       ])
     } finally {
       setIsStreaming(false)
@@ -230,7 +207,7 @@ export default function App() {
     }
   }, [input, isStreaming, activeId, updateMessages, setTitle])
 
-  const handleKeyDown = (e) => {
+  const handleKeyDown = e => {
     if (e.key === 'Enter' && !e.shiftKey) {
       e.preventDefault()
       sendMessage()
@@ -239,21 +216,20 @@ export default function App() {
 
   return (
     <div className="app">
-      {/* ── Sidebar ── */}
+      {/* Sidebar */}
       <aside className="sidebar">
         <div className="sidebar-header">
           <span className="logo">⬡ RAG Chat</span>
-          <button className="new-chat-btn" onClick={newConversation} title="New conversation">
+          <button className="new-chat-btn" onClick={newConversation}>
             <PlusIcon />
           </button>
         </div>
-
         <div className="conv-list">
           {conversations.length === 0 && (
             <p className="conv-empty">No conversations yet</p>
           )}
           {conversations.map(conv => (
-            <ConversationItem
+            <ConvItem
               key={conv.id}
               conv={conv}
               isActive={conv.id === activeId}
@@ -262,13 +238,12 @@ export default function App() {
             />
           ))}
         </div>
-
         <div className="sidebar-footer">
           <span>Powered by Gemini + LangGraph</span>
         </div>
       </aside>
 
-      {/* ── Main chat area ── */}
+      {/* Chat area */}
       <main className="chat-area">
         {messages.length === 0 && !isStreaming ? (
           <div className="welcome">
@@ -278,15 +253,13 @@ export default function App() {
           </div>
         ) : (
           <div className="messages">
-            {messages.map((msg, i) => (
-              <Message key={i} msg={msg} />
-            ))}
+            {messages.map((msg, i) => <Message key={i} msg={msg} />)}
             {isStreaming && <TypingIndicator status={streamStatus} />}
             <div ref={bottomRef} />
           </div>
         )}
 
-        {/* ── Input bar ── */}
+        {/* Input bar */}
         <div className="input-bar">
           <div className="input-wrapper">
             <textarea

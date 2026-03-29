@@ -1,34 +1,36 @@
-# RAG_chatbot
+# RAG Chatbot
 
-A Retrieval-Augmented Generation (RAG) chatbot with a React frontend, a FastAPI chat API, and an MCP-backed retrieval service. Local documents are embedded into ChromaDB and used to answer questions with Google Gemini.
+Local RAG chatbot with a React frontend, a FastAPI chat API, and a LangGraph agent that calls an MCP-backed retrieval tool. The architecture and runtime flow follow [system_design.md](system_design.md).
 
-## Features
-- Load and chunk local documents from `data_files/`.
-- Generate embeddings with `sentence-transformers`.
-- Store embeddings in a persistent ChromaDB database at `vector_database/`.
-- Expose retrieval as MCP tools from `pipelines/rag_server.py`.
-- Orchestrate chat responses through LangGraph in `pipelines/api_server.py`.
-- Serve a React + Vite frontend that streams answers over Server-Sent Events.
+## Overview
+User questions go from the frontend to FastAPI, then through the LangGraph agent to the MCP retrieval server. The retrieval server queries a persistent ChromaDB index built from documents in `data_files/`, and the final answer is streamed back to the browser over SSE.
 
-## Prerequisites
-- Python 3.9+
-- A virtual environment (recommended)
-- Node.js 18+ for the frontend
-- Google API key set in environment variable `GOOGLE_API_KEY` (if using Google Geminis)
+## Architecture
+- `preload.py` builds `vector_database/` from the source documents.
+- `backend/main.py` serves `/api/chat` and `/api/new_thread`.
+- `backend/agent.py` builds the LangGraph agent and connects MCP tools.
+- `backend/servers/rag_server.py` exposes the retrieval tool.
+- `frontend/` contains the Vite + React UI.
 
-## Installation
-1. Create and activate a Python virtual environment:
+## Project Structure
+- `data_files/` - source documents to embed.
+- `vector_database/` - generated ChromaDB persistence directory.
+- `backend/` - FastAPI app, LangGraph agent, and MCP server.
+- `frontend/` - Vite + React app.
+- `preload.py` - one-time index builder.
+- `start.py` - launches backend and frontend together.
+
+## Setup
+1. Create a Python virtual environment:
 
 ```powershell
 python -m venv .venv
-.\.venv\Scripts\Activate.ps1   # PowerShell
-# or
-.\.venv\Scripts\activate.bat   # cmd.exe
+.\.venv\Scripts\Activate.ps1
 ```
 
 2. Install Python dependencies:
 
-```bash
+```powershell
 pip install -r requirements.txt
 ```
 
@@ -39,61 +41,43 @@ cd frontend
 npm install
 ```
 
-## Usage
-Start the backend services in separate terminals:
+4. Add your Google API key to a `.env` file at the repo root:
 
-```powershell
-python pipelines/rag_server.py
+```env
+GOOGLE_API_KEY=your_api_key_here
 ```
 
+## Build the Vector Store
+Run this once before the first chat session, and again with `--rebuild` if you change documents:
+
 ```powershell
-python pipelines/api_server.py
+python preload.py
 ```
 
-Then start the frontend:
+## Run the App
+Start everything with one command:
+
+```powershell
+python start.py
+```
+
+If you prefer manual startup:
+
+```powershell
+python backend/main.py
+```
 
 ```powershell
 cd frontend
 npm run dev
 ```
 
-### Runtime layout
-- `pipelines/rag_server.py` runs an MCP SSE server on `http://127.0.0.1:8000/sse`.
-- `pipelines/api_server.py` runs FastAPI on `http://127.0.0.1:8001`.
-- `frontend/vite.config.js` proxies `/api` requests to `http://127.0.0.1:8001`.
-- The frontend requests a fresh conversation id from `/api/new_thread` and streams replies from `/api/chat`.
-
-## Configuration
-- Store keys in a `.env` file or your OS environment variables. Example `.env`:
-
-```
-GOOGLE_API_KEY=your_api_key_here
-```
-
-## API Endpoints
-- `GET /api/new_thread` returns a UUID for a new chat thread.
+## API
+- `GET /api/new_thread` returns a new conversation UUID.
 - `POST /api/chat` accepts `{ "message": string, "thread_id": string }` and streams SSE events.
-- SSE event types are `status`, `token`, `done`, and `error`.
-
-## Documentation
-- Detailed architecture and design notes are in [system_design.md](system_design.md).
-
-## Project structure
-- `frontend/` - React + Vite app.
-- `pipelines/rag_server.py` - MCP retrieval server and document ingestion.
-- `pipelines/api_server.py` - FastAPI chat orchestrator.
-- `data_files/` — Raw text documents used for building the vector store.
-- `vector_database/` — ChromaDB local DB files (ignored by `.gitignore`).
-- `requirements.txt` — Python dependencies.
-- `frontend/package.json` - Frontend dependency manifest.
+- SSE events include `status`, `token`, `done`, and `error`.
 
 ## Notes
-- The RAG server ingests documents during startup, so the vector store is ready before chat requests arrive.
-- If you change the embedding model, rebuild the Chroma collection so the embedding dimensions stay consistent.
-- Keep sensitive data and large generated artifacts out of the repo.
-
-## Contributing
-Open an issue or submit a PR with improvements.
-
-## License
-Specify your license here (e.g., MIT).
+- `backend/servers/rag_server.py` is a subprocess managed by the backend; it does not need its own terminal.
+- `vector_database/`, `frontend/node_modules/`, `.venv/`, and other generated files should not be committed.
+- If you change the embedding model, rebuild the vector store so dimensions stay consistent.

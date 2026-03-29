@@ -5,7 +5,6 @@ export default defineConfig({
   plugins: [react()],
   server: {
     proxy: {
-      // Forward /api/* requests to FastAPI — avoids CORS in dev
       '/api': 'http://127.0.0.1:8001',
     },
   },
